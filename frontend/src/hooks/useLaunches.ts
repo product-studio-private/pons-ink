@@ -8,6 +8,8 @@ export const tokenLaunchedEvent = parseAbiItem(
   'event TokenLaunched(address indexed token, address indexed curve, address indexed deployer, address pairToken, uint256 launchConfigId, uint256 graduationThreshold)',
 )
 
+const launchSweptEvent = parseAbiItem('event LaunchSwept(address indexed token, uint256 quoteOut, uint256 tokenOut)')
+
 export interface Launch {
   token: Address
   curve: Address
@@ -43,13 +45,16 @@ export function useLaunches() {
     refetchInterval: 3_000,
     queryFn: async (): Promise<Launch[]> => {
       if (!client || !deployment) return []
-      const logs = await client.getLogs({
-        address: deployment.factory,
-        event: tokenLaunchedEvent,
-        fromBlock: BigInt(deployment.startBlock),
-        toBlock: 'latest',
-      })
+      const range = { address: deployment.factory, fromBlock: BigInt(deployment.startBlock), toBlock: 'latest' } as const
+      const [logs, sweeps] = await Promise.all([
+        client.getLogs({ ...range, event: tokenLaunchedEvent }),
+        client.getLogs({ ...range, event: launchSweptEvent }),
+      ])
       if (logs.length === 0) return []
+      // the factory zeroes sweptQuote/sweptTokens once the pool is seeded, so take them from the sweep event
+      const swept = new Map(
+        sweeps.map((s) => [s.args.token!.toLowerCase(), { quote: s.args.quoteOut!, tokens: s.args.tokenOut! }]),
+      )
 
       const factory = deployment.factory
       const reads = logs.flatMap((l) => {
@@ -110,8 +115,8 @@ export function useLaunches() {
             tickSpacing: lt.tickSpacing,
             buybackEnabled: lt.buybackEnabled,
             phase: lt.phase,
-            sweptQuote: lt.sweptQuote,
-            sweptTokens: lt.sweptTokens,
+            sweptQuote: swept.get(l.args.token!.toLowerCase())?.quote ?? lt.sweptQuote,
+            sweptTokens: swept.get(l.args.token!.toLowerCase())?.tokens ?? lt.sweptTokens,
             launchBlock: l.blockNumber,
           } satisfies Launch
         })
