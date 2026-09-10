@@ -186,6 +186,7 @@ contract DeployInk is Script {
     function _writeJson(Deployment memory d, address deployer, address finalOwner) internal {
         string memory obj = "deployment";
         vm.serializeUint(obj, "chainId", block.chainid);
+        vm.serializeUint(obj, "startBlock", block.number);
         vm.serializeAddress(obj, "feeEscrow", address(d.feeEscrow));
         vm.serializeAddress(obj, "memeHook", address(d.hook));
         vm.serializeAddress(obj, "locker", address(d.locker));
