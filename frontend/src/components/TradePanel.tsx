@@ -67,7 +67,8 @@ export function TradePanel({ launch }: { launch: Launch }) {
       const gas = parseUnits('0.01', 18)
       v = v > gas ? v - gas : 0n
     }
-    setAmount(formatUnits(v, inDecimals))
+    // floor to 6 fraction digits so the field stays readable; never exceeds the balance
+    setAmount(formatUnits(v, inDecimals).replace(/(\.\d{6})\d+$/, '$1'))
   }
 
   async function refresh() {
@@ -193,7 +194,7 @@ export function TradePanel({ launch }: { launch: Launch }) {
         <div className="convert-panel">
           <div className="text-[13px] text-ink-300">Sell</div>
           <input
-            className={`convert-amount mt-2 ${amount.length > 22 ? 'text-[20px]' : amount.length > 14 ? 'text-[28px]' : ''}`}
+            className={`convert-amount mt-2 ${amount.length > 20 ? 'text-[18px]' : amount.length > 13 ? 'text-[26px]' : ''}`}
             placeholder="0"
             inputMode="decimal"
             disabled={!tradable}
