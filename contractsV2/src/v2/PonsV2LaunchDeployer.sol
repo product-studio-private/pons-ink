@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
+
 import {PonsV2LauncherToken} from "./PonsV2LauncherToken.sol";
 import {PonsV2BondingCurve} from "./PonsV2BondingCurve.sol";
 import {PonsV2BuybackVault} from "./PonsV2BuybackVault.sol";
@@ -26,6 +28,10 @@ struct LaunchDeployment {
     bool buybackEnabled;
     uint256 graduationThreshold;
     uint256 supply;
+    // Creator-chosen CREATE2 salt, forwarded from TokenParams. The factory
+    // authenticates `originalDeployer`, which gives each initiating account
+    // its own salt space even when it names a separate fee recipient.
+    bytes32 salt;
     string name;
     string symbol;
     string logo;
@@ -76,6 +82,19 @@ contract PonsV2LaunchDeployer {
      * Both contracts are told `factory` (not this deployer) is their
      * privileged caller. Wiring the curve to its token via `initialize()` is
      * left to the factory itself, since that call is `onlyFactory`-gated.
+     *
+     * @dev Deployed with CREATE2 rather than CREATE so neither address depends
+     * on this deployer's nonce, and therefore on the order launches happen to
+     * land in. Under CREATE the Nth launch simply took the Nth address, so an
+     * address predicted before its launch confirmed committed to nothing and
+     * a different launch could arrive there instead. Under CREATE2 the address
+     * is a function of the salt and the creation code, and the creation code
+     * carries every constructor argument, so an address can only ever hold the
+     * exact launch it was computed from.
+     *
+     * Reverts through `Create2` with `FailedDeployment` when the pair already
+     * exists, which is the same creator reusing a salt on otherwise identical
+     * terms. Callers can test for it in advance with `predictLaunchAddresses`.
      */
     function deployLaunch(LaunchDeployment calldata params)
         external
@@ -84,8 +103,50 @@ contract PonsV2LaunchDeployer {
     {
         _requireMetadataWithinLimits(params);
 
-        curve = address(
-            new PonsV2BondingCurve(
+        bytes32 salt = _launchSalt(params);
+        curve = Create2.deploy(0, salt, _curveCreationCode(params));
+        token = Create2.deploy(0, salt, _tokenCreationCode(params, curve));
+    }
+
+    /**
+     * @notice Returns the addresses `deployLaunch` would produce for `params`,
+     * without deploying anything.
+     *
+     * @dev Lets a caller confirm that a launch it has not seen confirmed yet
+     * will land where it expects, and lets the launch path be checked for a
+     * salt the creator has already used. The token is derived from the curve
+     * because the curve's address is one of the token's constructor
+     * arguments, so the pair has to be computed in deployment order.
+     */
+    function predictLaunchAddresses(LaunchDeployment calldata params)
+        external
+        view
+        returns (address token, address curve)
+    {
+        bytes32 salt = _launchSalt(params);
+        curve = Create2.computeAddress(salt, keccak256(_curveCreationCode(params)));
+        token = Create2.computeAddress(salt, keccak256(_tokenCreationCode(params, curve)));
+    }
+
+    /**
+     * @dev CREATE2 salt for one launch: the creator's chosen salt namespaced
+     * by the factory-authenticated initiating account. `creatorFeeRecipient`
+     * is intentionally not the namespace because any caller may name an
+     * arbitrary payout address and could otherwise squat another creator's
+     * deployment.
+     */
+    function _launchSalt(LaunchDeployment calldata params) private pure returns (bytes32) {
+        return keccak256(abi.encode(params.originalDeployer, params.salt));
+    }
+
+    /**
+     * @dev Creation code for the launch's bonding curve. Shared by the deploy
+     * and predict paths so the two can never derive different addresses.
+     */
+    function _curveCreationCode(LaunchDeployment calldata params) private view returns (bytes memory) {
+        return abi.encodePacked(
+            type(PonsV2BondingCurve).creationCode,
+            abi.encode(
                 params.pairToken,
                 params.creatorFeeRecipient,
                 factory,
@@ -100,8 +161,16 @@ contract PonsV2LaunchDeployer {
                 params.graduationThreshold
             )
         );
-        token = address(
-            new PonsV2LauncherToken(
+    }
+
+    /**
+     * @dev Creation code for the launch's token, given the curve it mints its
+     * whole supply to.
+     */
+    function _tokenCreationCode(LaunchDeployment calldata params, address curve) private view returns (bytes memory) {
+        return abi.encodePacked(
+            type(PonsV2LauncherToken).creationCode,
+            abi.encode(
                 params.name,
                 params.symbol,
                 params.logo,
