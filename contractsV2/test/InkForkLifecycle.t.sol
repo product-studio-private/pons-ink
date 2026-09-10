@@ -102,6 +102,110 @@ contract InkForkLifecycle is Test {
         assertEq(uint160(address(d.hook)) & ((1 << 14) - 1), 0x2044);
     }
 
+    function test_pairTokensApproved() public {
+        InkConfig.PairToken[] memory pairs = InkConfig.pairTokens();
+        for (uint256 i = 0; i < pairs.length; i++) {
+            assertTrue(d.factory.approvedPairTokens(pairs[i].token), pairs[i].symbol);
+            (uint256 phantom, uint256 threshold, uint8 decimals) = d.factory.pairTokenEconomics(pairs[i].token);
+            assertEq(phantom, pairs[i].phantomQuote);
+            assertEq(threshold, pairs[i].graduationThreshold);
+            assertEq(decimals, pairs[i].decimals);
+        }
+        assertFalse(d.factory.approvedPairTokens(makeAddr("random-erc20")));
+    }
+
+    /// @dev Same lifecycle as the native test but quoted in an xStock (TSLAx): the
+    /// curve pulls the ERC-20 via transferFrom, graduates at the per-asset
+    /// threshold, and seeds a TSLAx/token v4 pool.
+    function test_launchBuyGraduateWithXStockPair() public {
+        address pair = InkConfig.TSLAX;
+        uint256 threshold = 38 ether;
+        deal(pair, bob, 100 ether);
+
+        PonsV2LaunchFactory.TokenParams memory params = PonsV2LaunchFactory.TokenParams({
+            name: "Tesla Pons",
+            symbol: "TSLP",
+            logo: "",
+            description: "xstock-paired fork test",
+            socials: PonsV2LauncherToken.Socials("", "", "", "", ""),
+            creatorFeeRecipient: alice,
+            creatorTaxBps: 100,
+            buybackEnabled: true,
+            expectedEconomics: bytes32(0),
+            salt: bytes32(uint256(1))
+        });
+        uint256 launchFee = d.factory.launchFee();
+        address unapproved = makeAddr("random-erc20");
+        vm.prank(alice);
+        vm.expectRevert(PonsV2LaunchFactory.PairTokenNotApproved.selector);
+        d.factory.launchToken{value: launchFee}(params, 0, unapproved);
+
+        vm.prank(alice);
+        (address token, address curveAddr) = d.factory.launchToken{value: launchFee}(params, 0, pair);
+        PonsV2BondingCurve curve = PonsV2BondingCurve(curveAddr);
+        IPonsV2LaunchFactory.LaunchedToken memory launch = d.factory.getLaunchedToken(token);
+        assertEq(launch.pairToken, pair);
+        assertEq(launch.graduationThreshold, threshold);
+
+        vm.warp(block.timestamp + 60);
+
+        // Small buy: TSLAx leaves bob, tokens arrive, curve holds the quote.
+        vm.startPrank(bob);
+        IERC20(pair).approve(curveAddr, type(uint256).max);
+        vm.expectRevert();
+        curve.buy{value: 1 ether}(1 ether, 0, bob); // native value on an ERC-20 launch must revert
+        uint256 out = curve.buy(1 ether, 0, bob);
+        assertGt(out, 0);
+        assertEq(IERC20(token).balanceOf(bob), out);
+        assertEq(IERC20(pair).balanceOf(curveAddr), 1 ether);
+
+        // Sell half back, get TSLAx.
+        IERC20(token).approve(curveAddr, out / 2);
+        uint256 pairBefore = IERC20(pair).balanceOf(bob);
+        curve.sell(out / 2, 0, bob);
+        assertGt(IERC20(pair).balanceOf(bob), pairBefore);
+
+        // Buy past the threshold: auto-graduates.
+        curve.buy(60 ether, 0, bob);
+        vm.stopPrank();
+        assertTrue(curve.graduated(), "curve should auto-graduate on threshold");
+        launch = d.factory.getLaunchedToken(token);
+        assertEq(uint8(launch.phase), uint8(GraduationPhase.Swept));
+        assertGe(launch.sweptQuote, threshold * 9 / 10);
+
+        uint256 positionId = d.factory.createGraduatedPool(token);
+        assertGt(positionId, 0);
+        launch = d.factory.getLaunchedToken(token);
+        assertEq(uint8(launch.phase), uint8(GraduationPhase.PoolCreated));
+
+        // Swap TSLAx -> token on the graduated pool through the hook.
+        (Currency c0, Currency c1) =
+            token < pair ? (Currency.wrap(token), Currency.wrap(pair)) : (Currency.wrap(pair), Currency.wrap(token));
+        PoolKey memory key = PoolKey({
+            currency0: c0,
+            currency1: c1,
+            fee: launch.poolFee,
+            tickSpacing: launch.tickSpacing,
+            hooks: IHooks(address(d.hook))
+        });
+        SwapRouter router = new SwapRouter(IPoolManager(InkConfig.INK_POOL_MANAGER));
+        bool pairIsZero = Currency.unwrap(c0) == pair;
+        uint256 bobTokensBefore = IERC20(token).balanceOf(bob);
+        vm.startPrank(bob);
+        IERC20(pair).approve(address(router), type(uint256).max);
+        router.swap(
+            key,
+            SwapParams({
+                zeroForOne: pairIsZero,
+                amountSpecified: -1 ether,
+                sqrtPriceLimitX96: pairIsZero ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+            })
+        );
+        vm.stopPrank();
+        assertGt(IERC20(token).balanceOf(bob), bobTokensBefore, "swap should deliver tokens");
+        assertGt(d.hook.pendingFees(key.toId(), token), 0, "hook should have accrued memecoin fees");
+    }
+
     function test_launchBuyGraduateAndSwapOnInk() public {
         // Launch
         PonsV2LaunchFactory.TokenParams memory params = PonsV2LaunchFactory.TokenParams({

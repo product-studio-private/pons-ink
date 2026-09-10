@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {Script, console2} from "forge-std/Script.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {PonsV2LaunchFactory} from "../src/v2/PonsV2LaunchFactory.sol";
 import {PonsV2BondingCurve} from "../src/v2/PonsV2BondingCurve.sol";
@@ -15,7 +16,9 @@ import {IPonsV2LaunchFactory, GraduationPhase} from "../src/v2/interfaces/ILaunc
  *
  *   forge script script/LocalLaunch.s.sol:LocalLaunch --sig "launch(string,string)" "Test" "TST" \
  *       --rpc-url local --private-key $PK --broadcast
+ *   forge script script/LocalLaunch.s.sol:LocalLaunch --sig "launch(string,string,address)" "Test" "TST" $TSLAX ...
  *   forge script script/LocalLaunch.s.sol:LocalLaunch --sig "buy(address,uint256)" $TOKEN 1ether ...
+ *       (quoteIn is in the launch's quote asset base units; ERC-20 pairs are approved first)
  *   forge script script/LocalLaunch.s.sol:LocalLaunch --sig "sell(address,uint256)" $TOKEN 1000ether ...
  *   forge script script/LocalLaunch.s.sol:LocalLaunch --sig "graduate(address)" $TOKEN ...
  *   forge script script/LocalLaunch.s.sol:LocalLaunch --sig "status(address)" $TOKEN --rpc-url local
@@ -28,8 +31,24 @@ contract LocalLaunch is Script {
 
     /// @notice Launch a token with native ETH as quote using launch config 0.
     function launch(string memory name, string memory symbol) external returns (address token, address curve) {
+        return _launch(name, symbol, address(0));
+    }
+
+    /// @notice Launch a token quoted in an approved ERC-20 pair (xStock, kBTC, USDC, ...).
+    function launch(string memory name, string memory symbol, address pairToken)
+        external
+        returns (address token, address curve)
+    {
+        return _launch(name, symbol, pairToken);
+    }
+
+    function _launch(string memory name, string memory symbol, address pairToken)
+        internal
+        returns (address token, address curve)
+    {
         PonsV2LaunchFactory f = factory();
         (, address sender,) = vm.readCallers();
+        require(pairToken == address(0) || f.approvedPairTokens(pairToken), "pair token not approved");
 
         PonsV2LaunchFactory.TokenParams memory params = PonsV2LaunchFactory.TokenParams({
             name: name,
@@ -45,19 +64,28 @@ contract LocalLaunch is Script {
         });
 
         vm.startBroadcast();
-        (token, curve) = f.launchToken{value: f.launchFee()}(params, 0, address(0));
+        (token, curve) = f.launchToken{value: f.launchFee()}(params, 0, pairToken);
         vm.stopBroadcast();
 
         console2.log("token ", token);
         console2.log("curve ", curve);
+        console2.log("pair  ", pairToken);
     }
 
-    /// @notice Buy from the curve with `quoteIn` wei of ETH. Auto-graduates if it crosses the threshold.
+    /// @notice Buy from the curve with `quoteIn` base units of the launch's quote asset
+    ///         (wei for ETH launches). Auto-graduates if it crosses the threshold.
     function buy(address token, uint256 quoteIn) external {
         PonsV2BondingCurve curve = _curve(token);
+        address pair = factory().getLaunchedToken(token).pairToken;
         (, address sender,) = vm.readCallers();
         vm.startBroadcast();
-        uint256 out = curve.buy{value: quoteIn}(quoteIn, 0, sender);
+        uint256 out;
+        if (pair == address(0)) {
+            out = curve.buy{value: quoteIn}(quoteIn, 0, sender);
+        } else {
+            IERC20(pair).approve(address(curve), quoteIn);
+            out = curve.buy(quoteIn, 0, sender);
+        }
         vm.stopBroadcast();
         console2.log("tokens out", out);
         _status(token);
@@ -101,6 +129,7 @@ contract LocalLaunch is Script {
         IPonsV2LaunchFactory.LaunchedToken memory l = factory().getLaunchedToken(token);
         PonsV2BondingCurve curve = PonsV2BondingCurve(payable(l.curve));
         (uint256 q, uint256 t) = curve.getReserves();
+        console2.log("pair token       ", l.pairToken);
         console2.log("phase            ", uint8(l.phase));
         console2.log("quote reserve    ", q);
         console2.log("token reserve    ", t);

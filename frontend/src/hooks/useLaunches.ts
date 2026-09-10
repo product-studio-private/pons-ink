@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { usePublicClient } from 'wagmi'
 import { parseAbiItem, type Address } from 'viem'
-import { deployment } from '../lib/deployment'
+import { deployment, pairFor, type PairToken } from '../lib/deployment'
 import { BondingCurveAbi, LaunchFactoryAbi, LauncherTokenAbi } from '../generated/abis'
 
 export const tokenLaunchedEvent = parseAbiItem(
@@ -35,6 +35,8 @@ export interface Launch {
   buybackEnabled: boolean
   sweptQuote: bigint
   sweptTokens: bigint
+  /** Quote asset the curve is denominated in (ETH or an approved ERC-20). */
+  pair: PairToken
 }
 
 export function useLaunches() {
@@ -118,6 +120,7 @@ export function useLaunches() {
             sweptQuote: swept.get(l.args.token!.toLowerCase())?.quote ?? lt.sweptQuote,
             sweptTokens: swept.get(l.args.token!.toLowerCase())?.tokens ?? lt.sweptTokens,
             launchBlock: l.blockNumber,
+            pair: pairFor(l.args.pairToken),
           } satisfies Launch
         })
         .reverse()

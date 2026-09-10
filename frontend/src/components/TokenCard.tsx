@@ -1,17 +1,22 @@
 import { Link } from 'react-router-dom'
 import type { Launch } from '../hooks/useLaunches'
-import { fmtEth, pct, phaseName, short } from '../lib/format'
-import { launchPrice } from '../lib/curve'
+import { useNow } from '../hooks/useNow'
+import { ago, fmtQuote, pct, phaseName, short } from '../lib/format'
+import { marketCap } from '../lib/curve'
+import { isStock } from '../lib/deployment'
 
-export function TokenAvatar({ launch, size = 'md' }: { launch: Launch; size?: 'md' | 'lg' }) {
-  const cls = size === 'lg' ? 'h-20 w-20 text-2xl' : 'h-12 w-12'
+export function TokenAvatar({
+  launch,
+  className = 'h-12 w-12 rounded-[14px] text-base',
+}: {
+  launch: Launch
+  className?: string
+}) {
   if (launch.logo) {
-    return <img src={launch.logo} alt="" className={`${cls} shrink-0 rounded-xl object-cover`} />
+    return <img src={launch.logo} alt="" className={`${className} shrink-0 object-cover`} />
   }
   return (
-    <div
-      className={`${cls} grid shrink-0 place-items-center rounded-xl bg-gradient-to-br from-ink-700 to-kraken font-black text-white`}
-    >
+    <div className={`${className} grid shrink-0 place-items-center bg-kraken/20 font-semibold text-kraken-glow`}>
       {launch.symbol.slice(0, 3).toUpperCase()}
     </div>
   )
@@ -21,64 +26,76 @@ export function PhaseBadge({ phase }: { phase: number }) {
   const name = phaseName(phase)
   const cls =
     name === 'Graduated'
-      ? 'bg-mint/15 text-mint'
+      ? 'badge-dark'
       : name === 'Swept'
-        ? 'bg-gold/15 text-gold'
+        ? 'bg-gold/20 text-gold'
         : name === 'Rescued'
-          ? 'bg-coral/15 text-coral'
-          : 'bg-kraken/20 text-kraken-glow'
+          ? 'bg-coral/20 text-coral'
+          : 'badge-accent'
   return <span className={`badge ${cls}`}>{name}</span>
 }
 
-export function Progress({ launch }: { launch: Launch }) {
+export function PairBadge({ launch }: { launch: Launch }) {
+  return <span className="badge badge-outline">Paired {launch.pair.symbol}</span>
+}
+
+/** thin 4px progress rail + percent, as on the Pons explore cards */
+export function ProgressRail({ launch }: { launch: Launch }) {
   const p = launch.phase > 0 ? 100 : pct(launch.realQuote, launch.threshold)
   return (
-    <div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-ink-800">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-kraken to-mint transition-all"
-          style={{ width: `${Math.max(p, 1)}%` }}
-        />
+    <div className="flex items-center gap-2.5">
+      <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/[0.1]">
+        <div className="h-full rounded-full bg-kraken" style={{ width: `${Math.max(p, 1)}%` }} />
       </div>
-      <div className="mt-1 flex justify-between text-[11px] text-ink-300">
-        <span>{p.toFixed(1)}% to graduation</span>
-        <span className="font-mono">
-          {fmtEth(launch.phase > 0 ? launch.threshold : launch.realQuote, 3)} / {fmtEth(launch.threshold, 2)} ETH
-        </span>
-      </div>
+      <span className="text-[11px] tabular-nums text-ink-300">{p.toFixed(2)}%</span>
     </div>
   )
 }
 
 export function TokenCard({ launch }: { launch: Launch }) {
-  const price = launchPrice(launch)
-  const mcap = (price * launch.supply) / 10n ** 18n
+  const mcap = marketCap(launch)
+  const graduated = launch.phase > 0
+  const now = useNow()
+  const recent = now - Number(launch.launchedAt) < 120
+
   return (
-    <Link to={`/token/${launch.token}`} className="card group block p-4 transition hover:border-kraken-glow/60">
-      <div className="flex items-start gap-3">
-        <TokenAvatar launch={launch} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="truncate font-bold text-white group-hover:text-kraken-glow">{launch.name}</h3>
-            <PhaseBadge phase={launch.phase} />
-          </div>
-          <div className="text-xs text-ink-300">
-            <span className="font-mono">${launch.symbol}</span>
-            <span className="mx-1.5">·</span>by <span className="font-mono">{short(launch.deployer)}</span>
-          </div>
-          <p className="mt-1 line-clamp-2 text-xs text-ink-300/80">{launch.description || 'No description'}</p>
+    <Link
+      to={`/token/${launch.token}`}
+      className="group grid gap-2.5 rounded-card border border-white/[0.06] bg-white/[0.04] p-2.5 transition
+        hover:border-white/[0.14] hover:bg-white/[0.07]"
+    >
+      <div className="relative aspect-square overflow-hidden rounded-[14px] bg-black">
+        <TokenAvatar launch={launch} className="h-full w-full text-4xl" />
+        <div className="absolute top-2 left-2 flex gap-1">
+          {graduated ? <PhaseBadge phase={launch.phase} /> : <span className="badge badge-accent">Ink</span>}
+          {launch.pair.symbol !== 'ETH' && (
+            <span className={`badge ${isStock(launch.pair) ? 'bg-gold/90 text-black' : 'badge-dark'}`}>
+              {launch.pair.symbol}
+            </span>
+          )}
         </div>
       </div>
-      <div className="mt-4">
-        <Progress launch={launch} />
-      </div>
-      <div className="mt-3 flex justify-between text-xs">
-        <span className="text-ink-300">
-          MCap <span className="font-mono text-white">{fmtEth(mcap, 2)} ETH</span>
-        </span>
-        <span className="text-ink-300">
-          Price <span className="font-mono text-white">{fmtEth(price, 9)}</span>
-        </span>
+
+      <div className="px-0.5 pb-0.5">
+        <div className="truncate text-[15px] font-medium text-white">{launch.name}</div>
+        <div className="truncate text-[13px] text-ink-300">${launch.symbol}</div>
+        <div className="mt-2 flex items-baseline gap-1.5">
+          <span className="text-[15px] font-semibold text-white">
+            {fmtQuote(mcap, launch.pair.decimals, 2)} {launch.pair.symbol}
+          </span>
+          <span className="text-[11px] text-ink-300">MC</span>
+        </div>
+        {!graduated && (
+          <div className="mt-2.5">
+            <ProgressRail launch={launch} />
+          </div>
+        )}
+        <div className="mt-2.5 flex items-center justify-between text-[11px]">
+          <span className="text-ink-300">{short(launch.deployer)}</span>
+          <span className={recent ? 'font-medium text-kraken-glow' : 'text-ink-300'}>
+            {recent ? 'now' : `${ago(launch.launchedAt, now)} ago`}
+          </span>
+        </div>
       </div>
     </Link>
   )

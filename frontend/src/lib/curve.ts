@@ -1,4 +1,4 @@
-// Client-side mirror of PonsV2BondingCurve pricing for previews. Ignores the
+// Client-side mirror of the bonding-curve pricing for previews. Ignores the
 // launch-second snipe tax, so quotes right after launch are optimistic.
 const BPS = 10_000n
 
@@ -27,7 +27,7 @@ export function previewSell(s: CurveState, tokensIn: bigint): bigint {
   return gross - (gross * (s.feeBps + s.creatorTaxBps)) / BPS
 }
 
-/** Spot price in quote wei per whole token (1e18 units). */
+/** Spot price in quote base units per whole launcher token (launcher tokens are always 18 decimals). */
 export function spotPrice(s: CurveState): bigint {
   if (s.tokenReserve === 0n) return 0n
   return (s.quoteReserve * 10n ** 18n) / s.tokenReserve
@@ -51,6 +51,11 @@ export function launchPrice(l: PricedLaunch): bigint {
 export function tokensSold(l: PricedLaunch): bigint {
   if (l.phase === 0) return l.supply - l.tokenReserve
   return l.supply - l.sweptTokens
+}
+
+/** Market cap in quote base units: price (quote per whole token) * supply (18 decimals). */
+export function marketCap(l: PricedLaunch): bigint {
+  return (launchPrice(l) * l.supply) / 10n ** 18n
 }
 
 export function withSlippage(amount: bigint, bps: number): bigint {
