@@ -27,10 +27,22 @@ export function previewSell(s: CurveState, tokensIn: bigint): bigint {
   return gross - (gross * (s.feeBps + s.creatorTaxBps)) / BPS
 }
 
-/** Spot price in quote base units per whole launcher token (launcher tokens are always 18 decimals). */
+/**
+ * Prices are fixed-point with `PRICE_SCALE` extra digits: quote base units per whole launcher
+ * token, times 1e18. Format them with `pair.decimals + PRICE_DECIMALS`. Without the extra
+ * scale a 6-decimal quote (USDC) truncates to whole micro-dollars per token.
+ */
+export const PRICE_DECIMALS = 18
+export const PRICE_SCALE = 10n ** BigInt(PRICE_DECIMALS)
+
+/** quote * PRICE_SCALE / tokens, both in base units (launcher tokens are always 18 decimals). */
+export function priceOf(quote: bigint, tokens: bigint): bigint {
+  if (tokens === 0n) return 0n
+  return (quote * 10n ** 18n * PRICE_SCALE) / tokens
+}
+
 export function spotPrice(s: CurveState): bigint {
-  if (s.tokenReserve === 0n) return 0n
-  return (s.quoteReserve * 10n ** 18n) / s.tokenReserve
+  return priceOf(s.quoteReserve, s.tokenReserve)
 }
 
 interface PricedLaunch extends CurveState {
@@ -43,8 +55,7 @@ interface PricedLaunch extends CurveState {
 /** Curve spot price while bonding; after the sweep, the price the v4 pool was seeded at. */
 export function launchPrice(l: PricedLaunch): bigint {
   if (l.phase === 0) return spotPrice(l)
-  if (l.sweptTokens === 0n) return 0n
-  return (l.sweptQuote * 10n ** 18n) / l.sweptTokens
+  return priceOf(l.sweptQuote, l.sweptTokens)
 }
 
 /** Tokens bought off the curve (excludes the allocation swept into the pool). */
@@ -53,9 +64,14 @@ export function tokensSold(l: PricedLaunch): bigint {
   return l.supply - l.sweptTokens
 }
 
-/** Market cap in quote base units: price (quote per whole token) * supply (18 decimals). */
+/** Quote base units worth of `tokens` (18-decimal base units) at a scaled price. */
+export function valueAt(price: bigint, tokens: bigint): bigint {
+  return (price * tokens) / (10n ** 18n * PRICE_SCALE)
+}
+
+/** Market cap in quote base units. */
 export function marketCap(l: PricedLaunch): bigint {
-  return (launchPrice(l) * l.supply) / 10n ** 18n
+  return valueAt(launchPrice(l), l.supply)
 }
 
 export function withSlippage(amount: bigint, bps: number): bigint {

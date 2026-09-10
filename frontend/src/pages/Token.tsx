@@ -11,7 +11,7 @@ import { PriceChart } from '../components/PriceChart'
 import { RANGES, windowPoints, type Point, type Range } from '../lib/chart'
 import { useNow } from '../hooks/useNow'
 import { ago, fmtPrice, fmtQuote, fmtTokens, pct, short } from '../lib/format'
-import { launchPrice, marketCap } from '../lib/curve'
+import { launchPrice, marketCap, PRICE_DECIMALS, priceOf, valueAt } from '../lib/curve'
 import { isStock } from '../lib/deployment'
 import { LauncherTokenAbi } from '../generated/abis'
 
@@ -60,8 +60,7 @@ function TokenView({ launch }: { launch: Launch }) {
     }
     for (const t of [...(trades ?? [])].reverse()) {
       if (t.tokens === 0n) continue
-      const p = (t.quote * 10n ** 18n) / t.tokens
-      pts.push({ t: t.timestamp, v: Number(formatUnits((p * launch.supply) / 10n ** 18n, dec)) })
+      pts.push({ t: t.timestamp, v: Number(formatUnits(valueAt(priceOf(t.quote, t.tokens), launch.supply), dec)) })
     }
     if (launch.phase === 0) pts.push({ t: now, v: Number(formatUnits(mcap, dec)) })
     return pts.sort((a, b) => a.t - b.t)
@@ -196,7 +195,7 @@ function TokenView({ launch }: { launch: Launch }) {
             <div>
               <div className="stat-k">Price</div>
               <div className="stat-v">
-                {fmtPrice(price, dec)} {pair.symbol}
+                {fmtPrice(price, dec + PRICE_DECIMALS)} {pair.symbol}
               </div>
             </div>
             <div>

@@ -5,8 +5,8 @@ import { useAccount, usePublicClient, useReadContract, useWriteContract } from '
 import type { Launch } from '../hooks/useLaunches'
 import { useQuoteBalance } from '../hooks/useQuoteBalance'
 import { deployment } from '../lib/deployment'
-import { previewBuy, previewSell, spotPrice, withSlippage } from '../lib/curve'
-import { errMsg, fmtQuote, fmtTokens, parseSafe } from '../lib/format'
+import { PRICE_DECIMALS, previewBuy, previewSell, spotPrice, valueAt, withSlippage } from '../lib/curve'
+import { errMsg, fmtPrice, fmtQuote, fmtTokens, parseSafe } from '../lib/format'
 import { BondingCurveAbi, LaunchFactoryAbi, LauncherTokenAbi } from '../generated/abis'
 import { AssetIcon } from './AssetIcon'
 import { WalletButton } from './WalletButton'
@@ -50,7 +50,7 @@ export function TradePanel({ launch }: { launch: Launch }) {
   const price = spotPrice(launch)
 
   // value of the launcher-token leg expressed in the quote asset
-  const tokenLegValue = (tokens: bigint) => (tokens * price) / 10n ** 18n
+  const tokenLegValue = (tokens: bigint) => valueAt(price, tokens)
 
   const flip = () => {
     setSide((s) => (s === 'buy' ? 'sell' : 'buy'))
@@ -324,7 +324,7 @@ export function TradePanel({ launch }: { launch: Launch }) {
 
       <p className="mt-3 text-center text-[12px] text-ink-300">
         {((Number(launch.feeBps) + Number(launch.creatorTaxBps)) / 100).toFixed(2)}% fee · 1 {launch.symbol} ={' '}
-        {fmtQuote(price, pair.decimals, 10)} {pair.symbol}
+        {fmtPrice(price, pair.decimals + PRICE_DECIMALS)} {pair.symbol}
       </p>
 
       {status && (
