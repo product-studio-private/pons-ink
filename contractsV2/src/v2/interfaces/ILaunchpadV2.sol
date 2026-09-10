@@ -61,6 +61,21 @@ interface IPonsV2FeePolicy {
 }
 
 /**
+ * @notice Anti-snipe tax terms each bonding curve snapshots from the factory
+ * when it initializes, inside its own launch transaction. Implemented by
+ * PonsV2LaunchFactory as owner-mutable settings that govern launches from
+ * the moment they change; a curve already trading keeps the terms it
+ * launched under, so a factory retune can never reprice an open launch
+ * window. `snipeTaxStartBps` is the tax charged in the launch second, in
+ * basis points of a buy's quote leg, decaying exponentially to zero across
+ * `snipeTaxSeconds`. A zero starting tax disables the mechanism.
+ */
+interface IPonsV2SnipeTax {
+    function snipeTaxStartBps() external view returns (uint256);
+    function snipeTaxSeconds() external view returns (uint256);
+}
+
+/**
  * @notice Minimal ERC-721 receiver signature used by PonsV2LaunchLocker to
  * accept the graduated Uniswap V4 position NFT.
  */

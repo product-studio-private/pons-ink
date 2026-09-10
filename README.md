@@ -45,6 +45,7 @@ Website: [ponsfamily.com](https://ponsfamily.com) · Twitter/X: [@ponsdotfamily]
 - [V1 vs V2 at a glance](#v1-vs-v2-at-a-glance)
 - [V1 — CREATE2 factory + locked Uniswap V3 liquidity](#v1--create2-factory--locked-uniswap-v3-liquidity)
 - [V2 — bonding curve + graduated Uniswap V4 pool](#v2--bonding-curve--graduated-uniswap-v4-pool)
+- [Deploying V2 on Ink](#deploying-v2-on-ink)
 - [Stack](#stack)
 - [Repository layout](#repository-layout)
 - [Vendor dependencies](#vendor-dependencies)
@@ -154,6 +155,59 @@ V2 replaces day-one concentrated liquidity with a fair-launch curve. Every launc
 - Quotability preflight prices a reference trade so a launch can never be created in an unquotable configuration
 - Metadata length caps (name, symbol, logo, description, socials) so `socials()` stays readable on chain
 
+## Deploying V2 on Ink
+
+`contractsV2/` is a self-contained [Foundry](https://getfoundry.sh) project that deploys the V2 stack against
+the official Uniswap V4 deployment on [Ink](https://inkonchain.com) (chain id `57073`). The V2 sources are
+synced byte-for-byte with the Blockscout-verified Robinhood Chain deployment (solc `0.8.35`, `cancun`, `via_ir`,
+200 runs) — `PonsV2FeeEscrow.sol`, previously missing from this repo, is included from the verified bundle.
+
+### Ink addresses used
+
+| Contract          | Address                                      |
+| ----------------- | -------------------------------------------- |
+| `PoolManager`     | `0x360e68faccca8ca495c1b759fd9eee466db9fb32` |
+| `PositionManager` | `0x1b35d13a2e2528f192637f14b05f0dc0e7deb566` |
+| `Permit2`         | `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
+| CREATE2 deployer  | `0x4e59b44847b379578588920cA78FbF26c0B4956C` |
+
+Source: [Uniswap V4 deployments](https://docs.uniswap.org/contracts/v4/deployments). Constants live in
+`contractsV2/script/InkConfig.sol`, together with default launch economics mirroring Robinhood config `#0`
+(1B supply, 1% curve fee, 1.68 ETH phantom quote, 4.2 ETH graduation, tick spacing 200, 0.0005 ETH launch fee).
+
+### Build and test
+
+```bash
+cd contractsV2
+forge build
+# full lifecycle on an Ink mainnet fork: deploy -> launch -> buy to graduation -> seed V4 pool -> swap via hook
+INK_RPC_URL=https://rpc-gel.inkonchain.com forge test --match-contract InkForkLifecycle -vv
+```
+
+### Deploy
+
+`script/DeployInk.s.sol` deploys and wires everything in one broadcast:
+
+1. `PonsV2FeeEscrow`
+2. `PonsV2MemeHook` — CREATE2 through the canonical deployer at an address whose low 14 bits are
+   `beforeInitialize | afterSwap | afterSwapReturnDelta` (`0x2044`), mined on the fly by `script/HookMiner.sol`
+3. `PonsV2LaunchLocker`, `PonsV2BuybackVault`
+4. `PonsV2LaunchFactory` (deploys its own `PonsV2GraduationGuard`)
+5. `PonsV2GraduationExecutor`, `PonsV2LaunchDeployer`
+6. one-time wiring (`setFactory`, `setBuybackVault`, `setFeeSweepOperator`, `setGraduationExecutor`,
+   `setLaunchDeployer`, `addLaunchConfig`, `setLaunchEnabled`)
+7. optional `Ownable2Step` handoff to `FINAL_OWNER` (who must then `acceptOwnership()` on the hook, locker,
+   vault and factory)
+
+```bash
+cd contractsV2
+cp .env.example .env   # fill in FINAL_OWNER, PROTOCOL_FEE_RECIPIENT, etc.
+source .env
+WRITE_DEPLOYMENT=true forge script script/DeployInk.s.sol:DeployInk --rpc-url ink --account <keystore> --broadcast --verify
+```
+
+Addresses are written to `contractsV2/deployments/57073.json`. The broadcasting account pays roughly 24M gas.
+
 ## Stack
 
 | Item            | Value                                                              |
@@ -195,6 +249,7 @@ V2 replaces day-one concentrated liquidity with a fair-launch curve. Every launc
     │   ├── PonsV2GraduationExecutor.sol
     │   ├── PonsV2LaunchLocker.sol
     │   ├── PonsV2BuybackVault.sol
+    │   ├── PonsV2FeeEscrow.sol
     │   ├── hooks/PonsV2MemeHook.sol
     │   ├── interfaces/
     │   │   ├── ILaunchpadV2.sol
@@ -202,7 +257,14 @@ V2 replaces day-one concentrated liquidity with a fair-launch curve. Every launc
     │   └── libraries/
     │       ├── PonsV2BondingCurveMath.sol
     │       └── PonsV2GraduationMath.sol
+    ├── script/
+    │   ├── DeployInk.s.sol       # full Ink deployment + wiring
+    │   ├── InkConfig.sol         # Ink v4 addresses, default economics
+    │   └── HookMiner.sol         # CREATE2 salt search for hook flag bits
+    ├── test/InkForkLifecycle.t.sol
+    ├── foundry.toml
     └── lib/
+        ├── forge-std/            # git submodule
         ├── openzeppelin-contracts/
         ├── v4-core/
         ├── v4-periphery/         # incl. permit2 interfaces
