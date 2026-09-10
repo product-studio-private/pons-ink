@@ -273,7 +273,6 @@ function Activity({
   const pages = Math.max(1, Math.ceil(list.length / ROWS))
   const cur = Math.min(page, pages)
   const from = (cur - 1) * ROWS
-  const market = launch.phase === 2 ? 'Uniswap v4' : 'Bonding curve'
 
   return (
     <section className="panel p-6">
@@ -328,7 +327,7 @@ function Activity({
                   {fmtQuote(t.quote, launch.pair.decimals, 6)}
                   <AssetIcon symbol={launch.pair.symbol} />
                 </div>
-                <div className="text-[12px] text-ink-300">{market}</div>
+                <div className="text-[12px] text-ink-300">Bonding curve</div>
               </div>
               <div className="w-14 text-right text-[12px] text-ink-300">
                 {now - t.timestamp < 60 ? 'now' : `${ago(t.timestamp, now)} ago`}

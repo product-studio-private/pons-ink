@@ -392,7 +392,11 @@ async function report() {
       pub.readContract({ ...curve, functionName: 'tokenReserve' }),
       pub.readContract({ address: l.token, abi: erc20Abi, functionName: 'totalSupply' }).then(async (supply) => supply - (await pub.readContract({ address: l.token, abi: erc20Abi, functionName: 'balanceOf', args: [l.curve] }))),
     ])
-    let line = `${l.symbol.padEnd(9)} ${l.pair.symbol.padEnd(6)} ${PHASE[l.phase].padEnd(9)} raised ${fmt(quoteReserve, l.pair.decimals).padStart(10)} / ${fmt(l.threshold, l.pair.decimals)} ${l.pair.symbol}  curve holds ${fmt(tokenReserve, 18)}  circulating ${fmt(sold, 18)}`
+    let line = `${l.symbol.padEnd(9)} ${l.pair.symbol.padEnd(6)} ${PHASE[l.phase].padEnd(9)} `
+    line +=
+      l.phase === 0
+        ? `raised ${fmt(quoteReserve, l.pair.decimals).padStart(10)} / ${fmt(l.threshold, l.pair.decimals)} ${l.pair.symbol}  curve holds ${fmt(tokenReserve, 18)}  circulating ${fmt(sold, 18)}`
+        : `curve closed at ${fmt(l.threshold, l.pair.decimals)} ${l.pair.symbol}  supply out of curve ${fmt(sold, 18)}`
     if (l.phase === 2) {
       const key = poolKey(l)
       const poolId = keccak256(
