@@ -48,6 +48,7 @@ import {HookMiner} from "./HookMiner.sol";
  *   LAUNCH_ENABLED          open launches to the public at deploy (default: true)
  *   POOL_MANAGER / POSITION_MANAGER / PERMIT2  override the Ink defaults
  *   WRITE_DEPLOYMENT        write deployments/<chainId>.json (default: false)
+ *   DEPLOYMENT_FILE         override the output path (e.g. deployments/local.json)
  *
  * Usage:
  *   WRITE_DEPLOYMENT=true forge script script/DeployInk.s.sol:DeployInk --rpc-url ink --account <keystore> --broadcast --verify
@@ -195,6 +196,8 @@ contract DeployInk is Script {
         vm.serializeAddress(obj, "launchDeployer", address(d.launchDeployer));
         vm.serializeAddress(obj, "deployer", deployer);
         string memory json = vm.serializeAddress(obj, "owner", finalOwner);
-        vm.writeJson(json, string.concat("deployments/", vm.toString(block.chainid), ".json"));
+        string memory path =
+            vm.envOr("DEPLOYMENT_FILE", string.concat("deployments/", vm.toString(block.chainid), ".json"));
+        vm.writeJson(json, path);
     }
 }

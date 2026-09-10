@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Local dev loop: Anvil forked from Ink + full Pons V2 stack deployed with anvil account #0.
+#
+#   ./dev.sh up        start anvil (fork of Ink) in the background, deploy, export ABIs
+#   ./dev.sh deploy    (re)deploy against a running anvil
+#   ./dev.sh abis      export ABIs to deployments/abi/*.json
+#   ./dev.sh down      stop anvil
+#
+#   ./dev.sh launch "Name" SYM        launch a token (ETH quote, config 0)
+#   ./dev.sh buy <token> <eth>       buy from the curve, e.g. ./dev.sh buy 0x.. 0.5
+#   ./dev.sh sell <token> <tokens>   sell back to the curve, e.g. ./dev.sh sell 0x.. 1000000
+#   ./dev.sh graduate <token>        sweep + seed the v4 pool once the threshold is hit
+#   ./dev.sh status <token>          print curve reserves / phase
+#
+# Outputs: deployments/local.json (addresses), deployments/abi/ (ABIs for the frontend).
+# Anvil account #0 is the owner. Never use these keys anywhere but a local node.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+RPC="${LOCAL_RPC_URL:-http://127.0.0.1:8545}"
+FORK_URL="${INK_RPC_URL:-https://rpc-gel.inkonchain.com}"
+PORT="${ANVIL_PORT:-8545}"
+PK="${ANVIL_PK:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+PIDFILE=".anvil.pid"
+# anvil's 10 default accounts (mnemonic "test test ... junk")
+DEV_ACCOUNTS=(
+  0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC 0x90F79bf6EB2c4f870365E785982E1f101E93b906
+  0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc
+  0x976EA74026E726554dB657fA54763abd0C3a0aa9 0x14dC79964da2C08b23698B3D3cc7Ca32193d9955
+  0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f 0xa0Ee7A142d267C1f36714E4a8F75612F20a79720
+)
+
+# On Ink mainnet the well-known anvil accounts carry an EIP-7702 delegation to a
+# sweeper that forwards any ETH they receive. The fork inherits that code, so any
+# fee paid to account #0 would drain it. Reset them to plain EOAs with 10k ETH.
+clean_dev_accounts() {
+  for a in "${DEV_ACCOUNTS[@]}"; do
+    cast rpc --rpc-url "$RPC" anvil_setCode "$a" 0x >/dev/null
+    cast rpc --rpc-url "$RPC" anvil_setBalance "$a" 0x21e19e0c9bab2400000 >/dev/null
+  done
+}
+
+start_anvil() {
+  if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+    echo "anvil already running (pid $(cat "$PIDFILE"))"; return
+  fi
+  anvil --fork-url "$FORK_URL" --chain-id 57073 --port "$PORT" --block-time "${ANVIL_BLOCK_TIME:-2}" \
+    > anvil.log 2>&1 &
+  echo $! > "$PIDFILE"
+  for _ in $(seq 1 30); do
+    cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  clean_dev_accounts
+  echo "anvil up on $RPC (fork of Ink @ block $(cast block-number --rpc-url "$RPC")), log: anvil.log"
+}
+
+deploy() {
+  WRITE_DEPLOYMENT=true DEPLOYMENT_FILE=deployments/local.json \
+    forge script script/DeployInk.s.sol:DeployInk --rpc-url "$RPC" --private-key "$PK" --broadcast -q
+  echo "deployed -> deployments/local.json"
+  cat deployments/local.json
+}
+
+abis() {
+  mkdir -p deployments/abi
+  for c in PonsV2LaunchFactory PonsV2BondingCurve PonsV2LauncherToken PonsV2MemeHook \
+           PonsV2LaunchLocker PonsV2BuybackVault PonsV2FeeEscrow PonsV2GraduationExecutor; do
+    forge inspect "$c" abi --json > "deployments/abi/$c.json"
+  done
+  echo "ABIs -> deployments/abi/"
+}
+
+ll() { # <sig> <args...> : run a LocalLaunch helper and broadcast it
+  local sig=$1; shift
+  RUST_LOG=error forge script script/LocalLaunch.s.sol:LocalLaunch --sig "$sig" "$@" \
+    --rpc-url "$RPC" --private-key "$PK" --broadcast
+}
+
+case "${1:-up}" in
+  up)     start_anvil; deploy; abis ;;
+  deploy) clean_dev_accounts; deploy ;;
+  abis)   abis ;;
+  launch)   ll "launch(string,string)" "$2" "$3" ;;
+  buy)      ll "buy(address,uint256)" "$2" "$(cast to-wei "$3")" ;;
+  sell)     ll "sell(address,uint256)" "$2" "$(cast to-wei "$3")" ;;
+  graduate) ll "graduate(address)" "$2" ;;
+  status)   RUST_LOG=error forge script script/LocalLaunch.s.sol:LocalLaunch --sig "status(address)" "$2" --rpc-url "$RPC" ;;
+  down)   [ -f "$PIDFILE" ] && kill "$(cat "$PIDFILE")" 2>/dev/null && rm -f "$PIDFILE" && echo "anvil stopped" || echo "anvil not running" ;;
+  *) echo "usage: $0 {up|deploy|abis|down|launch|buy|sell|graduate|status}"; exit 1 ;;
+esac
