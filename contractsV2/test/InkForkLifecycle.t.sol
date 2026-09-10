@@ -4,62 +4,18 @@ pragma solidity ^0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
-import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
-import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {DeployInk} from "../script/DeployInk.s.sol";
 import {InkConfig} from "../script/InkConfig.sol";
+import {LocalV4Router} from "../script/LocalV4Router.sol";
 import {PonsV2LaunchFactory} from "../src/v2/PonsV2LaunchFactory.sol";
 import {PonsV2BondingCurve} from "../src/v2/PonsV2BondingCurve.sol";
 import {PonsV2LauncherToken} from "../src/v2/PonsV2LauncherToken.sol";
 import {GraduationPhase, IPonsV2LaunchFactory} from "../src/v2/interfaces/ILaunchpadV2.sol";
-
-/// @dev Minimal v4 swapper: settles the input currency and takes the output.
-contract SwapRouter is IUnlockCallback {
-    using CurrencyLibrary for Currency;
-
-    IPoolManager internal immutable poolManager;
-
-    constructor(IPoolManager poolManager_) {
-        poolManager = poolManager_;
-    }
-
-    function swap(PoolKey memory key, SwapParams memory params) external payable returns (BalanceDelta) {
-        return abi.decode(poolManager.unlock(abi.encode(key, params, msg.sender)), (BalanceDelta));
-    }
-
-    function unlockCallback(bytes calldata data) external returns (bytes memory) {
-        require(msg.sender == address(poolManager), "not pm");
-        (PoolKey memory key, SwapParams memory params, address payer) = abi.decode(data, (PoolKey, SwapParams, address));
-        BalanceDelta delta = poolManager.swap(key, params, "");
-        _settle(key.currency0, delta.amount0(), payer);
-        _settle(key.currency1, delta.amount1(), payer);
-        return abi.encode(delta);
-    }
-
-    function _settle(Currency c, int128 amount, address payer) internal {
-        if (amount < 0) {
-            uint256 owed = uint256(uint128(-amount));
-            if (c.isAddressZero()) {
-                poolManager.settle{value: owed}();
-            } else {
-                poolManager.sync(c);
-                IERC20(Currency.unwrap(c)).transferFrom(payer, address(poolManager), owed);
-                poolManager.settle();
-            }
-        } else if (amount > 0) {
-            poolManager.take(c, payer, uint256(uint128(amount)));
-        }
-    }
-
-    receive() external payable {}
-}
 
 /**
  * @notice Runs the whole Pons V2 lifecycle against a fork of Ink mainnet:
@@ -188,19 +144,12 @@ contract InkForkLifecycle is Test {
             tickSpacing: launch.tickSpacing,
             hooks: IHooks(address(d.hook))
         });
-        SwapRouter router = new SwapRouter(IPoolManager(InkConfig.INK_POOL_MANAGER));
+        LocalV4Router router = new LocalV4Router(IPoolManager(InkConfig.INK_POOL_MANAGER));
         bool pairIsZero = Currency.unwrap(c0) == pair;
         uint256 bobTokensBefore = IERC20(token).balanceOf(bob);
         vm.startPrank(bob);
         IERC20(pair).approve(address(router), type(uint256).max);
-        router.swap(
-            key,
-            SwapParams({
-                zeroForOne: pairIsZero,
-                amountSpecified: -1 ether,
-                sqrtPriceLimitX96: pairIsZero ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
-            })
-        );
+        router.swap(key, pairIsZero, 1 ether);
         vm.stopPrank();
         assertGt(IERC20(token).balanceOf(bob), bobTokensBefore, "swap should deliver tokens");
         assertGt(d.hook.pendingFees(key.toId(), token), 0, "hook should have accrued memecoin fees");
@@ -252,14 +201,11 @@ contract InkForkLifecycle is Test {
             tickSpacing: launch.tickSpacing,
             hooks: IHooks(address(d.hook))
         });
-        SwapRouter router = new SwapRouter(IPoolManager(InkConfig.INK_POOL_MANAGER));
+        LocalV4Router router = new LocalV4Router(IPoolManager(InkConfig.INK_POOL_MANAGER));
 
         uint256 bobTokensBefore = IERC20(token).balanceOf(bob);
         vm.prank(bob);
-        router.swap{value: 0.5 ether}(
-            key,
-            SwapParams({zeroForOne: true, amountSpecified: -0.5 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1})
-        );
+        router.swap{value: 0.5 ether}(key, true, 0.5 ether);
         assertGt(IERC20(token).balanceOf(bob), bobTokensBefore, "swap should deliver tokens");
 
         // Hook took its afterSwap cut on the output currency (the memecoin).
