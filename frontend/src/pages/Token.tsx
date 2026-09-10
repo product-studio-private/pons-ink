@@ -43,7 +43,14 @@ function TokenView({ launch }: { launch: Launch }) {
   const mcap = marketCap(launch)
   const progress = launch.phase > 0 ? 100 : pct(launch.realQuote, launch.threshold)
   const raised = launch.phase > 0 ? launch.threshold : launch.realQuote
-  const market = launch.phase === 0 ? 'Bonding curve' : launch.phase === 2 ? 'Uniswap v4' : launch.phase === 1 ? 'Graduating' : 'Rescued'
+  const phaseLabel = (['Bonding curve', 'Graduating', 'Graduated', 'Rescued'] as const)[launch.phase] ?? 'Bonding curve'
+  const market = (['Bonding curve', 'Curve closed', 'Uniswap v4', 'Rescued'] as const)[launch.phase] ?? 'Bonding curve'
+  const phaseNote = [
+    'At the threshold the curve closes and liquidity moves to a Uniswap v4 pool.',
+    'Threshold reached: reserves are swept and waiting for the Uniswap v4 pool to be created.',
+    'The curve closed and liquidity is locked in a Uniswap v4 pool.',
+    'The launch was rescued; the curve is closed.',
+  ][launch.phase]
 
   const links = socials
     ? (['twitter', 'telegram', 'discord', 'website', 'farcaster'] as const)
@@ -51,9 +58,11 @@ function TokenView({ launch }: { launch: Launch }) {
         .filter(([, v]) => v)
     : []
 
-  // market cap after every trade (execution price × supply); starts at the curve's phantom quote
+  // market cap after every trade (execution price × supply); starts at the curve's phantom quote.
+  // No trades yet → no points, so the chart shows its empty state.
   const points = useMemo<Point[]>(() => {
     const pts: Point[] = []
+    if (!trades?.length) return pts
     if (launch.phase === 0 && launch.supply > 0n) {
       const phantom = (launch.quoteReserve * launch.tokenReserve) / launch.supply
       pts.push({ t: Number(launch.launchedAt), v: Number(formatUnits(phantom, dec)) })
@@ -160,9 +169,9 @@ function TokenView({ launch }: { launch: Launch }) {
 
           <div className="subpanel mt-5 p-4">
             <div className="flex items-center justify-between text-[13px]">
-              <span className="font-medium text-white">{launch.phase === 0 ? 'Bonding curve' : 'Graduated'}</span>
+              <span className="font-medium text-white">{phaseLabel}</span>
               <span className="text-ink-300">
-                {launch.phase === 0 ? `${progress.toFixed(0)}% to graduation` : 'Uniswap v4 pool'}
+                {launch.phase === 0 ? `${progress.toFixed(0)}% to graduation` : market}
               </span>
             </div>
             <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/[0.1]">
@@ -170,9 +179,7 @@ function TokenView({ launch }: { launch: Launch }) {
             </div>
             <p className="mt-3 text-[13px] leading-5 text-ink-300">
               {fmtQuote(raised, dec, 6)} of {fmtQuote(launch.threshold, dec, 4)} {pair.symbol} raised.{' '}
-              {launch.phase === 0
-                ? 'At the threshold the curve closes and liquidity moves to a Uniswap v4 pool.'
-                : 'The curve closed and liquidity is locked in a Uniswap v4 pool.'}
+              {phaseNote}
             </p>
           </div>
 
@@ -266,7 +273,7 @@ function Activity({
   const pages = Math.max(1, Math.ceil(list.length / ROWS))
   const cur = Math.min(page, pages)
   const from = (cur - 1) * ROWS
-  const market = launch.phase === 0 ? 'Bonding curve' : 'Uniswap v4'
+  const market = launch.phase === 2 ? 'Uniswap v4' : 'Bonding curve'
 
   return (
     <section className="panel p-6">

@@ -22,6 +22,14 @@ function cmpBig(a: bigint, b: bigint) {
   return a === b ? 0 : a > b ? -1 : 1
 }
 
+/**
+ * Quote amounts are only comparable within one pair asset (no oracle), so quote-denominated
+ * sorts rank by how far along the graduation threshold the amount is, which is pair-neutral.
+ */
+function ofThreshold(amount: bigint, l: Launch): number {
+  return l.threshold === 0n ? 0 : Number((amount * 1_000_000n) / l.threshold)
+}
+
 function sortLaunches(list: Launch[], sort: Sort, since: number, activity: Map<string, CurveActivity>) {
   const act = (l: Launch) => activity.get(l.curve.toLowerCase())
   const volume = (l: Launch) =>
@@ -35,9 +43,9 @@ function sortLaunches(list: Launch[], sort: Sort, since: number, activity: Map<s
     case 'Oldest':
       return out.sort((a, b) => cmpBig(b.launchedAt, a.launchedAt))
     case 'Market cap':
-      return out.sort((a, b) => cmpBig(marketCap(a), marketCap(b)))
+      return out.sort((a, b) => ofThreshold(marketCap(b), b) - ofThreshold(marketCap(a), a))
     case 'Volume':
-      return out.sort((a, b) => cmpBig(volume(a), volume(b)))
+      return out.sort((a, b) => ofThreshold(volume(b), b) - ofThreshold(volume(a), a))
   }
 }
 

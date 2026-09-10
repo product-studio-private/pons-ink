@@ -5,7 +5,7 @@ import { useAccount, usePublicClient, useReadContract, useWriteContract } from '
 import type { Launch } from '../hooks/useLaunches'
 import { useQuoteBalance } from '../hooks/useQuoteBalance'
 import { deployment } from '../lib/deployment'
-import { PRICE_DECIMALS, previewBuy, previewSell, spotPrice, valueAt, withSlippage } from '../lib/curve'
+import { launchPrice, PRICE_DECIMALS, previewBuy, previewSell, valueAt, withSlippage } from '../lib/curve'
 import { errMsg, fmtPrice, fmtQuote, fmtTokens, parseSafe } from '../lib/format'
 import { BondingCurveAbi, LaunchFactoryAbi, LauncherTokenAbi } from '../generated/abis'
 import { AssetIcon } from './AssetIcon'
@@ -47,7 +47,7 @@ export function TradePanel({ launch }: { launch: Launch }) {
   const buyPrev = side === 'buy' && amt > 0n ? previewBuy(launch, amt) : null
   const sellPrev = side === 'sell' && amt > 0n ? previewSell(launch, amt) : 0n
   const out = side === 'buy' ? (buyPrev?.tokensOut ?? 0n) : sellPrev
-  const price = spotPrice(launch)
+  const price = launchPrice(launch)
 
   // value of the launcher-token leg expressed in the quote asset
   const tokenLegValue = (tokens: bigint) => valueAt(price, tokens)
@@ -193,7 +193,7 @@ export function TradePanel({ launch }: { launch: Launch }) {
         <div className="convert-panel">
           <div className="text-[13px] text-ink-300">Sell</div>
           <input
-            className="convert-amount mt-2"
+            className={`convert-amount mt-2 ${amount.length > 22 ? 'text-[20px]' : amount.length > 14 ? 'text-[28px]' : ''}`}
             placeholder="0"
             inputMode="decimal"
             disabled={!tradable}
