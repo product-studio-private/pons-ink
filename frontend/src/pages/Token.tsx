@@ -6,7 +6,7 @@ import { useTrades } from '../hooks/useTrades'
 import { PhaseBadge, Progress, TokenAvatar } from '../components/TokenCard'
 import { TradePanel } from '../components/TradePanel'
 import { fmtEth, fmtTokens, short } from '../lib/format'
-import { spotPrice } from '../lib/curve'
+import { launchPrice, tokensSold } from '../lib/curve'
 import { deployment } from '../lib/deployment'
 import { LauncherTokenAbi } from '../generated/abis'
 
@@ -26,9 +26,9 @@ export function Token() {
   if (isLoading && !launch) return <div className="text-sm text-ink-300">Loading…</div>
   if (!launch) return <NotFound msg="No launch found for this token on the current deployment." />
 
-  const price = spotPrice(launch)
+  const price = launchPrice(launch)
   const mcap = (price * launch.supply) / 10n ** 18n
-  const sold = launch.supply - launch.tokenReserve
+  const sold = tokensSold(launch)
   const links = socials
     ? (['twitter', 'telegram', 'discord', 'website', 'farcaster'] as const)
         .map((k, i) => [k, socials[i]] as const)
@@ -69,7 +69,7 @@ export function Token() {
             <Progress launch={launch} />
           </div>
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat k="Price" v={`${fmtEth(price, 9)} ETH`} />
+            <Stat k={launch.phase === 0 ? 'Price' : 'Pool seed price'} v={`${fmtEth(price, 9)} ETH`} />
             <Stat k="Market cap" v={`${fmtEth(mcap, 3)} ETH`} />
             <Stat k="Raised" v={`${fmtEth(launch.phase > 0 ? launch.threshold : launch.realQuote, 4)} ETH`} />
             <Stat k="Sold" v={`${fmtTokens(sold)} / ${fmtTokens(launch.supply)}`} />

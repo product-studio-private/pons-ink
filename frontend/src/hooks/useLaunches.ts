@@ -31,6 +31,8 @@ export interface Launch {
   poolFee: number
   tickSpacing: number
   buybackEnabled: boolean
+  sweptQuote: bigint
+  sweptTokens: bigint
 }
 
 export function useLaunches() {
@@ -83,6 +85,8 @@ export function useLaunches() {
             creatorTaxBps: number
             buybackEnabled: boolean
             phase: number
+            sweptQuote: bigint
+            sweptTokens: bigint
           }
           return {
             token: l.args.token!,
@@ -106,6 +110,8 @@ export function useLaunches() {
             tickSpacing: lt.tickSpacing,
             buybackEnabled: lt.buybackEnabled,
             phase: lt.phase,
+            sweptQuote: lt.sweptQuote,
+            sweptTokens: lt.sweptTokens,
             launchBlock: l.blockNumber,
           } satisfies Launch
         })

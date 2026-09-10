@@ -33,6 +33,26 @@ export function spotPrice(s: CurveState): bigint {
   return (s.quoteReserve * 10n ** 18n) / s.tokenReserve
 }
 
+interface PricedLaunch extends CurveState {
+  phase: number
+  supply: bigint
+  sweptQuote: bigint
+  sweptTokens: bigint
+}
+
+/** Curve spot price while bonding; after the sweep, the price the v4 pool was seeded at. */
+export function launchPrice(l: PricedLaunch): bigint {
+  if (l.phase === 0) return spotPrice(l)
+  if (l.sweptTokens === 0n) return 0n
+  return (l.sweptQuote * 10n ** 18n) / l.sweptTokens
+}
+
+/** Tokens bought off the curve (excludes the allocation swept into the pool). */
+export function tokensSold(l: PricedLaunch): bigint {
+  if (l.phase === 0) return l.supply - l.tokenReserve
+  return l.supply - l.sweptTokens
+}
+
 export function withSlippage(amount: bigint, bps: number): bigint {
   return (amount * (BPS - BigInt(bps))) / BPS
 }

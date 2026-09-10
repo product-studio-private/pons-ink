@@ -39,7 +39,7 @@ export function WalletButton() {
         {isPending ? 'Connecting…' : 'Connect'}
       </button>
       {open && (
-        <div className="card absolute right-0 z-20 mt-2 w-64 p-2 shadow-2xl">
+        <div className="card absolute right-0 z-20 mt-2 w-64 bg-ink-900 p-2 shadow-2xl">
           {injected.map((c) => (
             <button
               key={c.uid}

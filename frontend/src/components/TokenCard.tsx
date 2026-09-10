@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import type { Launch } from '../hooks/useLaunches'
 import { fmtEth, pct, phaseName, short } from '../lib/format'
-import { spotPrice } from '../lib/curve'
+import { launchPrice } from '../lib/curve'
 
 export function TokenAvatar({ launch, size = 'md' }: { launch: Launch; size?: 'md' | 'lg' }) {
   const cls = size === 'lg' ? 'h-20 w-20 text-2xl' : 'h-12 w-12'
@@ -51,7 +51,7 @@ export function Progress({ launch }: { launch: Launch }) {
 }
 
 export function TokenCard({ launch }: { launch: Launch }) {
-  const price = spotPrice(launch)
+  const price = launchPrice(launch)
   const mcap = (price * launch.supply) / 10n ** 18n
   return (
     <Link to={`/token/${launch.token}`} className="card group block p-4 transition hover:border-kraken-glow/60">

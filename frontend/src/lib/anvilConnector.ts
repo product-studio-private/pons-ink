@@ -1,5 +1,5 @@
 import { createConnector } from 'wagmi'
-import { custom, getAddress, numberToHex, type Address, type EIP1193RequestFn } from 'viem'
+import { getAddress, numberToHex, type Address, type EIP1193Provider, type EIP1193RequestFn } from 'viem'
 import { rpc } from 'viem/utils'
 
 /**
@@ -10,7 +10,7 @@ import { rpc } from 'viem/utils'
 export function anvilAccount(address: Address, index: number) {
   const id = `anvil-${index}`
   const key = `${id}.connected`
-  return createConnector<EIP1193RequestFn>((config) => ({
+  return createConnector<EIP1193Provider>((config) => ({
     id,
     name: `Anvil #${index}`,
     type: 'anvil',
@@ -47,7 +47,7 @@ export function anvilAccount(address: Address, index: number) {
     },
     async getProvider() {
       const url = config.chains[0].rpcUrls.default.http[0]
-      const request: EIP1193RequestFn = async ({ method, params }) => {
+      const request = (async ({ method, params }) => {
         if (method === 'eth_accounts' || method === 'eth_requestAccounts') return [address]
         if (method === 'eth_chainId') return numberToHex(config.chains[0].id)
         if (method === 'wallet_switchEthereumChain') return null
@@ -59,8 +59,9 @@ export function anvilAccount(address: Address, index: number) {
         const { error, result } = await rpc.http(url, { body })
         if (error) throw new Error(error.message)
         return result
-      }
-      return custom({ request })({ retryCount: 0 }).request
+      }) as EIP1193RequestFn
+      const provider: EIP1193Provider = { request, on: () => {}, removeListener: () => {} }
+      return provider
     },
   }))
 }
