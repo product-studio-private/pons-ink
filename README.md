@@ -208,6 +208,29 @@ WRITE_DEPLOYMENT=true forge script script/DeployInk.s.sol:DeployInk --rpc-url in
 
 Addresses are written to `contractsV2/deployments/57073.json`. The broadcasting account pays roughly 24M gas.
 
+### Local dev loop (Anvil fork + frontend)
+
+No real funds involved. `dev.sh` forks Ink mainnet into Anvil (so the real Uniswap V4 contracts are there),
+deploys the stack with Anvil's default account, and exports addresses + ABIs for the frontend.
+
+```bash
+cd contractsV2
+./dev.sh up                 # anvil fork on :8545 -> deploy -> deployments/local.json + ABIs
+./dev.sh launch "My Coin" MC
+./dev.sh buy <token> 1      # 1 ETH into the curve
+./dev.sh sell <token> 1000000
+./dev.sh graduate <token>   # sweep + seed the V4 pool once the curve is sold out
+./dev.sh status <token>
+./dev.sh down
+
+cd ../frontend && npm install && npm run dev   # http://localhost:5173
+```
+
+`frontend/` is a Vite + React + wagmi launchpad UI (list / launch / buy / sell / graduate) that reads
+`contractsV2/deployments/local.json` and the generated `frontend/src/generated/abis.ts`. It ships with
+connectors for Anvil's unlocked dev accounts (no browser wallet needed) plus an injected-wallet option.
+Set `VITE_RPC_URL` / `VITE_DEPLOYMENT` to point it elsewhere.
+
 ## Stack
 
 | Item            | Value                                                              |

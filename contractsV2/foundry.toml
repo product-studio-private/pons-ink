@@ -24,6 +24,7 @@ remappings = [
 
 [rpc_endpoints]
 ink = "${INK_RPC_URL}"
+local = "http://127.0.0.1:8545"
 ink_sepolia = "${INK_SEPOLIA_RPC_URL}"
 
 [etherscan]

@@ -1,0 +1,222 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Pure black base, near-black panels, Kraken purple accents */
+  --color-ink-950: #000000;
+  --color-ink-900: #0d0d0d;
+  --color-ink-800: #161616;
+  --color-ink-700: #1c1c1c;
+  --color-ink-600: #232323;
+  --color-ink-300: rgba(242, 242, 242, 0.58);
+  --color-ink-200: rgba(242, 242, 242, 0.8);
+  --color-ink-100: #f2f2f2;
+
+  --color-kraken: #7132f5;
+  --color-kraken-light: #8a55ff;
+  --color-kraken-glow: #b39bff;
+  --color-mint: #2ee6a6;
+  --color-coral: #ff5c7a;
+  --color-gold: #ffc857;
+
+  --radius-panel: 28px;
+  --radius-glass: 24px;
+  --radius-card: 20px;
+  --radius-stage: 18px;
+
+  --shadow-panel:
+    0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35), 0 24px 48px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-preview: 0 24px 56px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink-950 text-ink-100 antialiased;
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+::selection {
+  background: rgba(113, 50, 245, 0.45);
+}
+
+@layer components {
+  /* ── surfaces ─────────────────────────────────────────── */
+  .panel {
+    @apply rounded-panel border border-white/[0.12] bg-ink-900 shadow-panel;
+  }
+  .glass {
+    @apply rounded-glass border border-white/[0.08] bg-white/[0.04];
+  }
+  .subpanel {
+    @apply rounded-card border border-white/[0.06] bg-white/[0.04];
+  }
+  .card {
+    @apply rounded-glass border border-white/[0.08] bg-white/[0.04];
+  }
+
+  /* ── pills / chips ────────────────────────────────────── */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-white/[0.05] px-3.5 py-2
+      text-[13px] font-medium text-ink-200 transition hover:border-white/20 hover:text-white
+      disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .chip.is-active {
+    @apply border-kraken/60 bg-kraken/20 text-white;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-4;
+  }
+  .badge-dark {
+    @apply bg-black/70 text-white/90 backdrop-blur;
+  }
+  .badge-accent {
+    @apply bg-kraken text-white;
+  }
+  .badge-outline {
+    @apply border border-white/[0.14] text-ink-300;
+  }
+
+  /* segmented control (chart ranges, sort, tabs) */
+  .seg {
+    @apply inline-flex items-center gap-[2px] rounded-full bg-white/[0.06] p-[3px];
+  }
+  .seg-item {
+    @apply rounded-full px-3 py-1.5 text-[13px] font-medium text-ink-300 transition hover:text-white;
+  }
+  .seg-item.is-active {
+    @apply bg-white/[0.1] text-white;
+  }
+  .seg-xs .seg-item {
+    @apply px-2.5 py-1 text-[11px] font-semibold tracking-wide;
+  }
+
+  /* big tabs (Market / Limit / Orders) */
+  .tabs {
+    @apply grid grid-flow-col auto-cols-fr gap-1 rounded-[14px] bg-white/[0.06] p-1;
+  }
+  .tabs-tab {
+    @apply rounded-[12px] px-4 py-2.5 text-center text-[13px] font-medium text-ink-300 transition hover:text-white;
+  }
+  .tabs-tab.is-active {
+    @apply bg-white/[0.1] text-white;
+  }
+
+  /* ── buttons ──────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition
+      disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply bg-kraken text-white hover:bg-kraken-light;
+  }
+  .btn-ghost {
+    @apply border border-white/[0.1] bg-white/[0.05] text-ink-200 hover:border-white/20 hover:text-white;
+  }
+  .btn-sell {
+    @apply bg-coral/90 text-white hover:bg-coral;
+  }
+  .cta {
+    @apply flex w-full items-center justify-center rounded-[20px] bg-kraken px-[22px] py-[14px] text-[16px]
+      font-semibold text-white transition hover:bg-kraken-light disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .cta-sell {
+    @apply bg-coral/90 hover:bg-coral;
+  }
+
+  /* ── forms ────────────────────────────────────────────── */
+  .field {
+    @apply w-full rounded-[14px] border border-white/[0.11] bg-white/[0.035] px-3.5 py-3 text-[15px] text-white
+      outline-none transition placeholder:text-ink-300/60 focus:border-kraken/70 focus:bg-white/[0.05];
+  }
+  .field-label {
+    @apply mb-1.5 block text-[13px] font-medium text-ink-200;
+  }
+  .hint {
+    @apply mt-1.5 text-[12px] text-ink-300;
+  }
+  .input {
+    @apply w-full rounded-[14px] border border-white/[0.11] bg-white/[0.035] px-3.5 py-3 text-[15px] text-white
+      outline-none transition placeholder:text-ink-300/60 focus:border-kraken/70 focus:bg-white/[0.05];
+  }
+  .label {
+    @apply mb-1.5 block text-[13px] font-medium text-ink-200;
+  }
+
+  /* ── convert (trade) widget ───────────────────────────── */
+  .convert-panel {
+    @apply rounded-card border border-white/[0.08] bg-white/[0.06] px-[18px] py-4;
+  }
+  .convert-amount {
+    @apply w-full bg-transparent text-[40px] leading-none font-medium tracking-tight text-white outline-none
+      placeholder:text-white/80;
+  }
+  .convert-asset {
+    @apply inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.06] px-3 py-1.5 text-sm
+      font-semibold text-white;
+  }
+  .convert-swap {
+    @apply grid h-10 w-10 place-items-center rounded-[12px] border border-white/[0.1] bg-ink-900 text-ink-300
+      shadow-panel transition hover:text-white;
+  }
+  .convert-quick {
+    @apply rounded-full border border-white/[0.08] bg-white/[0.04] py-2 text-center text-[13px] font-medium
+      text-ink-300 transition hover:text-white disabled:opacity-40;
+  }
+  .convert-quick.is-active {
+    @apply bg-kraken text-white;
+  }
+
+  /* ── chart ────────────────────────────────────────────── */
+  .chart-stage {
+    @apply relative min-h-[300px] overflow-hidden rounded-stage bg-white/[0.03];
+  }
+
+  /* ── stats row (Price | Market cap | …) ───────────────── */
+  .stat-row {
+    @apply grid grid-cols-2 divide-white/[0.1] sm:grid-cols-4 sm:divide-x;
+  }
+  .stat-row > div {
+    @apply px-3 first:pl-0 sm:px-4;
+  }
+  .stat-k {
+    @apply text-[11px] text-ink-300;
+  }
+  .stat-v {
+    @apply mt-1 text-[15px] font-medium text-white;
+  }
+}
+
+/* ambient purple glow behind the graduated collection (Pons uses lime here) */
+.glow-ring {
+  box-shadow:
+    0 0 0 1px rgba(113, 50, 245, 0.35),
+    0 0 40px rgba(113, 50, 245, 0.12),
+    var(--shadow-panel);
+}
+
+/* toggle switch */
+.switch {
+  @apply relative h-6 w-10 shrink-0 rounded-full bg-white/[0.12] transition;
+}
+.switch::after {
+  content: '';
+  @apply absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition;
+}
+.switch.is-on {
+  @apply bg-kraken;
+}
+.switch.is-on::after {
+  transform: translateX(16px);
+}
+
+input[type='range'] {
+  accent-color: #7132f5;
+}

@@ -34,6 +34,8 @@ import {HookMiner} from "./HookMiner.sol";
  *   8. one-time wiring: hook.setFactory / setBuybackVault, locker.setFactory,
  *      vault.setFactory, factory.setGraduationExecutor / setLaunchDeployer,
  *      factory.addLaunchConfig, factory.setLaunchEnabled
+ *   8b. approve the ERC-20 quote assets in InkConfig.pairTokens() (xStocks,
+ *      kBTC, kHYPE, stables, ...) with their per-asset curve economics
  *   9. optional Ownable2Step handoff to FINAL_OWNER (must acceptOwnership on
  *      hook, locker, vault and factory)
  *
@@ -46,8 +48,10 @@ import {HookMiner} from "./HookMiner.sol";
  *   LAUNCH_FORWARDER        router allowed to forward launches (default: unset)
  *   LAUNCH_FEE              wei charged per launch (default: 0.0005 ether)
  *   LAUNCH_ENABLED          open launches to the public at deploy (default: true)
+ *   APPROVE_PAIR_TOKENS     approve InkConfig.pairTokens() as quote assets (default: true)
  *   POOL_MANAGER / POSITION_MANAGER / PERMIT2  override the Ink defaults
  *   WRITE_DEPLOYMENT        write deployments/<chainId>.json (default: false)
+ *   DEPLOYMENT_FILE         override the output path (e.g. deployments/local.json)
  *
  * Usage:
  *   WRITE_DEPLOYMENT=true forge script script/DeployInk.s.sol:DeployInk --rpc-url ink --account <keystore> --broadcast --verify
@@ -79,6 +83,7 @@ contract DeployInk is Script {
         address launchForwarder = vm.envOr("LAUNCH_FORWARDER", address(0));
         uint256 launchFee = vm.envOr("LAUNCH_FEE", InkConfig.DEFAULT_LAUNCH_FEE);
         bool launchEnabled = vm.envOr("LAUNCH_ENABLED", true);
+        bool approvePairTokens = vm.envOr("APPROVE_PAIR_TOKENS", true);
 
         if (block.chainid == InkConfig.INK_MAINNET_CHAIN_ID) {
             require(address(poolManager) == InkConfig.INK_POOL_MANAGER, "unexpected PoolManager for Ink");
@@ -147,6 +152,20 @@ contract DeployInk is Script {
             );
         if (launchEnabled) d.factory.setLaunchEnabled(true);
 
+        // 8b. ERC-20 quote assets. Skipped per-asset when the address holds no
+        // code (e.g. a non-Ink chain), since approval requires a live token.
+        if (approvePairTokens) {
+            InkConfig.PairToken[] memory pairs = InkConfig.pairTokens();
+            for (uint256 i = 0; i < pairs.length; i++) {
+                if (pairs[i].token.code.length == 0) continue;
+                d.factory
+                    .setPairTokenEconomics(
+                        pairs[i].token, pairs[i].phantomQuote, pairs[i].graduationThreshold, pairs[i].decimals
+                    );
+                d.factory.setPairTokenApproved(pairs[i].token, true);
+            }
+        }
+
         // 9. Ownable2Step handoff; FINAL_OWNER must call acceptOwnership() on each.
         if (finalOwner != deployer) {
             d.hook.transferOwnership(finalOwner);
@@ -180,11 +199,18 @@ contract DeployInk is Script {
         console2.log("PonsV2LaunchDeployer     ", address(d.launchDeployer));
         console2.log("deployer                 ", deployer);
         console2.log("pending owner            ", finalOwner);
+        InkConfig.PairToken[] memory pairs = InkConfig.pairTokens();
+        for (uint256 i = 0; i < pairs.length; i++) {
+            if (d.factory.approvedPairTokens(pairs[i].token)) {
+                console2.log("pair approved            ", pairs[i].symbol, pairs[i].token);
+            }
+        }
     }
 
     function _writeJson(Deployment memory d, address deployer, address finalOwner) internal {
         string memory obj = "deployment";
         vm.serializeUint(obj, "chainId", block.chainid);
+        vm.serializeUint(obj, "startBlock", block.number);
         vm.serializeAddress(obj, "feeEscrow", address(d.feeEscrow));
         vm.serializeAddress(obj, "memeHook", address(d.hook));
         vm.serializeAddress(obj, "locker", address(d.locker));
@@ -194,7 +220,28 @@ contract DeployInk is Script {
         vm.serializeAddress(obj, "graduationExecutor", address(d.graduationExecutor));
         vm.serializeAddress(obj, "launchDeployer", address(d.launchDeployer));
         vm.serializeAddress(obj, "deployer", deployer);
-        string memory json = vm.serializeAddress(obj, "owner", finalOwner);
-        vm.writeJson(json, string.concat("deployments/", vm.toString(block.chainid), ".json"));
+        vm.serializeAddress(obj, "owner", finalOwner);
+
+        InkConfig.PairToken[] memory pairs = InkConfig.pairTokens();
+        uint256 n;
+        for (uint256 i = 0; i < pairs.length; i++) {
+            if (d.factory.approvedPairTokens(pairs[i].token)) n++;
+        }
+        string[] memory items = new string[](n);
+        uint256 k;
+        for (uint256 i = 0; i < pairs.length; i++) {
+            if (!d.factory.approvedPairTokens(pairs[i].token)) continue;
+            string memory item = string.concat("pair", vm.toString(i));
+            vm.serializeAddress(item, "address", pairs[i].token);
+            vm.serializeString(item, "symbol", pairs[i].symbol);
+            vm.serializeUint(item, "decimals", pairs[i].decimals);
+            // strings: JSON numbers lose precision past 2^53 in JS
+            vm.serializeString(item, "phantomQuote", vm.toString(pairs[i].phantomQuote));
+            items[k++] = vm.serializeString(item, "graduationThreshold", vm.toString(pairs[i].graduationThreshold));
+        }
+        string memory json = vm.serializeString(obj, "pairTokens", items);
+        string memory path =
+            vm.envOr("DEPLOYMENT_FILE", string.concat("deployments/", vm.toString(block.chainid), ".json"));
+        vm.writeJson(json, path);
     }
 }
